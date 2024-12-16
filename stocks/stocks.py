@@ -1,24 +1,25 @@
 import requests # pip install requests
+import configparser
 import sys
 
-def load_api_config(file_path):
-    """Load API key and URL from a file."""
+def load_config(file_path):
+    """Load API parameters from file."""
+    config = configparser.ConfigParser()
     try:
-        with open(file_path, 'r') as file:
-            lines = file.readlines()
-            if len(lines) < 2:
-                print("Error: The file must contain at least two lines: API key and URL.")
-                return None, None
-            api_key = lines[0].strip()
-            api_url = lines[1].strip()
-            return api_key, api_url
+        config.read(file_path)
+        api_key = config['DEFAULT']['key']
+        api_url = config['DEFAULT']['url']
+        api_library = config['DEFAULT']['library']
+        return api_key, api_url, api_library
     except FileNotFoundError:
         print(f"Error: The file '{file_path}' was not found.")
+    except KeyError as e:
+        print(f"Error: Missing key in the config file: {e}")
     except Exception as e:
         print(f"An error occurred while reading the file: {e}")
-    return None, None
+    return None, None, None
 
-def get_real_time_stock_price(api_key, api_url, stock_symbol):
+def get_realtime_stock_price(api_key, api_url, stock_symbol):
     """Fetch real-time stock price for a given symbol."""
     params = {
         "function": "TIME_SERIES_INTRADAY",
@@ -47,7 +48,7 @@ def get_real_time_stock_price(api_key, api_url, stock_symbol):
 
 def main():
     # Load API key from file
-    api_key, api_url = load_api_config("API.txt")
+    api_key, api_url = load_config("config.ini")
     
     if not api_key:
         print("Failed to load API config. Exiting.")
@@ -61,7 +62,7 @@ def main():
         stock_symbol = input("Enter the stock ticker symbol (e.g., AAPL): ").strip().upper()
 
     # Fetch and display the stock price
-    get_real_time_stock_price(api_key, api_url, stock_symbol)
+    get_realtime_stock_price(api_key, api_url, stock_symbol)
 
 if __name__ == "__main__":
     main()
