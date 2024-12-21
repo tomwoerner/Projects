@@ -1,23 +1,46 @@
 import requests # pip install requests
 import configparser
 import sys
+import importlib
+import valuation as val
 
-def load_config(file_path):
-    """Load API parameters from file."""
+def load_config(file_path, group, *parameters):
+    """
+    Load specific parameters from a given group in the config file.
+
+    Args:
+        file_path (str): Path to the configuration file.
+        group (str): The group/section name in the config file.
+        *parameters (str): Names of the parameters (keys) to load.
+
+    Returns:
+        dict: A dictionary containing the requested parameters and their values.
+    """
     config = configparser.ConfigParser()
     try:
         config.read(file_path)
-        api_key = config['DEFAULT']['key']
-        api_url = config['DEFAULT']['url']
-        api_library = config['DEFAULT']['library']
-        return api_key, api_url, api_library
+        
+        # Access the specified group
+        section = config[group]
+        
+        # Load requested parameters
+        loaded_params = {}
+        for param in parameters:
+            if param in section:
+                loaded_params[param] = section[param]
+            else:
+                print(f"Warning: '{param}' not found in section '{group}'")
+
+        return loaded_params
+
     except FileNotFoundError:
         print(f"Error: The file '{file_path}' was not found.")
     except KeyError as e:
-        print(f"Error: Missing key in the config file: {e}")
+        print(f"Error: Missing section or key: {e}")
     except Exception as e:
-        print(f"An error occurred while reading the file: {e}")
-    return None, None, None
+        print(f"An error occurred: {e}")
+    
+    return {}
 
 def get_realtime_stock_price(api_key, api_url, stock_symbol):
     """Fetch real-time stock price for a given symbol."""
@@ -47,12 +70,17 @@ def get_realtime_stock_price(api_key, api_url, stock_symbol):
         print(f"An error occurred: {e}")
 
 def main():
-    # Load API key from file
-    api_key, api_url = load_config("config.ini")
+    # Load API configuration
+    config = load_config("config.ini", "API", "key", "url", "library")
     
-    if not api_key:
-        print("Failed to load API config. Exiting.")
+    # Check if all required configuration is present
+    if not all(key in config for key in ["key", "url", "library"]):
+        print("Failed to load complete API configuration. Exiting.")
         return
+    
+    api_key = config["key"]
+    api_url = config["url"]
+    api_lib = config["library"]
 
     # Check for a stock symbol argument
     if len(sys.argv) > 1:
