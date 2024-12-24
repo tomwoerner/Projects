@@ -2,7 +2,7 @@ import requests # pip install requests
 import configparser
 import sys
 
-def get_financial_ratios(ticker):
+def get_financial_ratios(api_key, api_url, ticker):
     """
     Fetch key financial ratios for the given stock ticker using Alpha Vantage API.
     
@@ -40,24 +40,3 @@ def get_financial_ratios(ticker):
     
     except Exception as e:
         return {"error": f"An error occurred: {e}"}
-
-def main():
-    # Load API key from file
-    api_key, api_url = load_config("config.ini")
-    
-    if not api_key:
-        print("Failed to load API config. Exiting.")
-        return
-
-    # Check for a stock symbol argument
-    if len(sys.argv) > 1:
-        stock_symbol = sys.argv[1].strip().upper()
-    else:
-        # Prompt user if no argument is passed
-        stock_symbol = input("Enter the stock ticker symbol (e.g., AAPL): ").strip().upper()
-
-    # Fetch and display the stock price
-    get_realtime_stock_price(api_key, api_url, stock_symbol)
-
-if __name__ == "__main__":
-    main()

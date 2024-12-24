@@ -2,7 +2,7 @@ import requests # pip install requests
 import configparser
 import sys
 import importlib
-import valuation as val
+from valuation import get_financial_ratios
 
 def load_config(file_path, group, *parameters):
     """
@@ -42,11 +42,11 @@ def load_config(file_path, group, *parameters):
     
     return {}
 
-def get_realtime_stock_price(api_key, api_url, stock_symbol):
+def get_realtime_stock_price(api_key, api_url, ticker):
     """Fetch real-time stock price for a given symbol."""
     params = {
         "function": "TIME_SERIES_INTRADAY",
-        "symbol": stock_symbol,
+        "symbol": ticker,
         "interval": "1min",
         "apikey": api_key
     }
@@ -61,7 +61,7 @@ def get_realtime_stock_price(api_key, api_url, stock_symbol):
             latest_data = data["Time Series (1min)"][latest_time]
             stock_price = latest_data["4. close"]
 
-            print(f"{stock_symbol} Price: ${stock_price} as of {latest_time}")
+            print(f"{ticker} Price: ${stock_price} as of {latest_time}")
         elif "Error Message" in data:
             print("Error: Invalid stock symbol or data unavailable.")
         else:
@@ -70,7 +70,7 @@ def get_realtime_stock_price(api_key, api_url, stock_symbol):
         print(f"An error occurred: {e}")
 
 def main():
-    # Load API configuration
+    #print(sys.builtin_module_names)
     config = load_config("config.ini", "API", "key", "url", "library")
     
     # Check if all required configuration is present
@@ -84,13 +84,13 @@ def main():
 
     # Check for a stock symbol argument
     if len(sys.argv) > 1:
-        stock_symbol = sys.argv[1].strip().upper()
+        ticker = sys.argv[1].strip().upper()
     else:
         # Prompt user if no argument is passed
-        stock_symbol = input("Enter the stock ticker symbol (e.g., AAPL): ").strip().upper()
+        ticker = input("Enter the stock ticker symbol (e.g., AAPL): ").strip().upper()
 
-    # Fetch and display the stock price
-    get_realtime_stock_price(api_key, api_url, stock_symbol)
+    get_realtime_stock_price(api_key, api_url, ticker)
+    print(get_financial_ratios(api_key, api_url, ticker))
 
 if __name__ == "__main__":
     main()
