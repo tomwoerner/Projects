@@ -1,0 +1,46 @@
+pricing:
+  adult: 12.00
+  child: 9.50
+  matinee: 10.50
+  senior: 9.50
+
+hours:
+  - day: "Weekday"
+    open: 10:00
+    close: 22:00
+  - day: "Weekend"
+    open: 10:00
+    close: 23:00
+  - day: "Holiday"
+    open: 10:00
+    close: 23:00
+
+auditoriums: 
+  - room: 1
+    seats: 160
+  - room: 2
+    seats: 200
+  - room: 3
+    seats: 182
+
+movies:
+  - title: "Avatar"
+    runtime: 162
+    rating: "PG-13"
+    release_date: 2024-12-06
+    weeks: 6
+  - title: "Titanic"
+    runtime: 195
+    rating: "PG-13"
+    release_date: 2024-11-22
+    weeks: 5
+  - title: "Avengers: Endgame"
+    runtime: 181
+    rating: "PG-13"
+    release_date: 2024-11-29
+    weeks: 6
+  - title: "The Dark Knight"
+    runtime: 152
+    rating: "PG-13"
+    release_date: 2024-12-13
+    weeks: 4
