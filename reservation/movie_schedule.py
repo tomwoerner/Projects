@@ -1,26 +1,44 @@
 import yaml
 from datetime import datetime, timedelta
 import random
+import math
 
 def load_config(config_file):
     with open(config_file, "r") as file:
         return yaml.safe_load(file)
 
+def round_to_next_5min(dt):
+    minutes = dt.minute
+    rounded_minutes = math.ceil(minutes / 5) * 5
+    
+    if rounded_minutes == 60:
+        return dt.replace(minute=0) + timedelta(hours=1)
+    return dt.replace(minute=rounded_minutes)
+
 def get_showtimes(runtime, open_time, close_time):
     showtimes = []
-    current_time = open_time + timedelta(minutes=5)  # Pad 5 minutes before the first showtime
-    while current_time + timedelta(minutes=runtime + 5) <= close_time:
+    # Add 5 minutes padding before showtime and round to next 5 min interval
+    current_time = round_to_next_5min(open_time + timedelta(minutes=5))
+    
+    while current_time + timedelta(minutes=runtime) <= close_time:
         showtimes.append(current_time)
-        current_time += timedelta(minutes=runtime + 10)  # 5 minutes before and after each showtime
+        # Move to next potential showtime and round up
+        next_time = round_to_next_5min(current_time + timedelta(minutes=runtime))
+        if next_time <= current_time:  # Prevent infinite loop
+            current_time = next_time + timedelta(minutes=5)
+        else:
+            current_time = next_time
     return showtimes
 
 def is_timeslot_available(showtime, runtime, auditorium_schedule):
     for scheduled_time in auditorium_schedule:
-        movie_end_time = showtime + timedelta(minutes=runtime + 10)
-        scheduled_end_time = scheduled_time + timedelta(minutes=runtime + 10)
+        movie_end_time = showtime + timedelta(minutes=runtime)
+        scheduled_end_time = scheduled_time + timedelta(minutes=runtime)
         if not (movie_end_time <= scheduled_time or showtime >= scheduled_end_time):
             return False
     return True
+
+# Rest of the code remains exactly the same from here...
 
 def generate_schedule(config, days):
     today = datetime.today().date()
@@ -68,7 +86,7 @@ def generate_schedule(config, days):
             else:
                 movies_by_window["5+"].append(movie)
 
-        # Schedule each movie category
+        # Schedule minimum required showings for each movie
         for window, movies in movies_by_window.items():
             if not movies:
                 continue
@@ -83,7 +101,6 @@ def generate_schedule(config, days):
                 if title not in schedule[day_str]:
                     schedule[day_str][title] = []
 
-                # Get all possible showtimes for this movie
                 all_showtimes = get_showtimes(runtime, open_time, close_time)
                 random.shuffle(all_showtimes)
 
@@ -116,13 +133,38 @@ def generate_schedule(config, days):
                     print(f"Could not schedule minimum required showings for {title} on {day_str}")
                     return None
 
-        # After meeting minimum requirements, fill remaining slots preferentially
-        # Try to fill with 0-2 week movies first, then 3-4 week movies
-        for window in ["0-2", "3-4"]:
-            if not movies_by_window[window]:
-                continue
+        # After meeting minimum requirements, fill remaining slots with priority order:
+        # 1. Get week 3-4 movies to 3 showings if possible
+        # 2. Then prioritize week 0-2 movies for remaining slots
+        
+        # First, try to get week 3-4 movies to 3 showings
+        if movies_by_window["3-4"]:
+            for movie in movies_by_window["3-4"]:
+                title = movie["title"]
+                runtime = movie["runtime"]
+                current_showings = len(schedule[day_str][title])
+                
+                if current_showings < 3:  # Try to get to 3 showings
+                    remaining_showtimes = get_showtimes(runtime, open_time, close_time)
+                    random.shuffle(remaining_showtimes)
 
-            for movie in movies_by_window[window]:
+                    for showtime in remaining_showtimes:
+                        if len(schedule[day_str][title]) >= 3:
+                            break
+                            
+                        for auditorium in config["auditoriums"]:
+                            room = auditorium["room"]
+                            if is_timeslot_available(showtime, runtime, auditorium_schedules[day_str][room]):
+                                auditorium_schedules[day_str][room].append(showtime)
+                                schedule[day_str][title].append({
+                                    "auditorium": room,
+                                    "showtime": showtime.strftime("%H:%M")
+                                })
+                                break
+
+        # Then fill remaining slots with week 0-2 releases
+        if movies_by_window["0-2"]:
+            for movie in movies_by_window["0-2"]:
                 title = movie["title"]
                 runtime = movie["runtime"]
                 
