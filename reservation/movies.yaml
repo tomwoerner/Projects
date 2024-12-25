@@ -6,14 +6,14 @@ pricing:
 
 hours:
   - day: "Weekday"
-    open: 10:00
-    close: 22:00
+    open: "10:00"
+    close: "22:00"
   - day: "Weekend"
-    open: 10:00
-    close: 23:00
+    open: "10:00"
+    close: "23:00"
   - day: "Holiday"
-    open: 10:00
-    close: 23:00
+    open: "10:00"
+    close: "23:00"
 
 auditoriums: 
   - room: 1

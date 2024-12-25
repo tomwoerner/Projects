@@ -14,12 +14,12 @@ def get_showtimes(runtime, open_time, close_time, frequency):
     return showtimes[:frequency]
 
 def generate_schedule(config):
-    today = datetime.today()
+    today = datetime.today().date()
     schedule = {}
 
     for movie in config["movies"]:
         title = movie["title"]
-        release_date = datetime.strptime(movie["release_date"], "%Y-%m-%d")
+        release_date = datetime.strptime(str(movie["release_date"]), "%Y-%m-%d").date()
         weeks_count = movie["weeks"]
         runtime = movie["runtime"]
 
