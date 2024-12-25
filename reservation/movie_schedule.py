@@ -38,150 +38,109 @@ def is_timeslot_available(showtime, runtime, auditorium_schedule):
             return False
     return True
 
-# Rest of the code remains exactly the same from here...
+def get_days_until_expiration(movie_title, movies_config):
+    """
+    Calculate days until movie expiration.
+    Returns negative number if expired.
+    """
+    movie = next((m for m in movies_config["movies"] if m["title"] == movie_title), None)
+    if not movie:
+        raise ValueError(f"Movie {movie_title} not found")
+        
+    release_date = movie["release_date"] if isinstance(movie["release_date"], datetime) else datetime.strptime(str(movie["release_date"]), "%Y-%m-%d")
+    expiration_date = release_date + timedelta(days=movie["weeks"] * 7)
+    days_remaining = (expiration_date - datetime.now()).days
+    return days_remaining
+
+def is_movie_expired(movie_title, movies_config):
+    """Check if movie has expired based on release date and weeks running"""
+    return get_days_until_expiration(movie_title, movies_config) < 0
+
+def filter_active_movies(movies_config):
+    """Return only non-expired movies"""
+    return [m for m in movies_config["movies"] 
+            if not is_movie_expired(m["title"], movies_config)]
 
 def generate_schedule(config, days):
     today = datetime.today().date()
     schedule = {}
-
-    # Initialize schedule structure
+    
     for i in range(days):
         day = today + timedelta(days=i)
         day_str = day.strftime("%Y-%m-%d")
         schedule[day_str] = {}
-
-    # Track auditorium schedules across all movies
-    auditorium_schedules = {day_str: {aud["room"]: [] for aud in config["auditoriums"]} 
-                           for day_str in schedule.keys()}
-
-    for day_str in schedule.keys():
-        day = datetime.strptime(day_str, "%Y-%m-%d").date()
         
-        # Get operating hours for the day
         day_name = day.strftime("%A")
-        if day_name in ["Monday", "Tuesday", "Wednesday", "Thursday"]:
-            hours = next(h for h in config["hours"] if h["day"] == "Weekday")
-        else:
-            hours = next(h for h in config["hours"] if h["day"] == "Weekend")
-
+        hours = next(h for h in config["hours"] if h["day"] == ("Weekday" if day_name in ["Monday", "Tuesday", "Wednesday", "Thursday"] else "Weekend"))
+        
         open_time = datetime.strptime(hours["open"], "%H:%M").replace(year=day.year, month=day.month, day=day.day)
         close_time = datetime.strptime(hours["close"], "%H:%M").replace(year=day.year, month=day.month, day=day.day)
-
-        # Group movies by their release window
-        movies_by_window = {"0-2": [], "3-4": [], "5+": []}
         
-        for movie in config["movies"]:
-            release_date = datetime.strptime(str(movie["release_date"]), "%Y-%m-%d").date()
-            weeks_count = movie["weeks"]
-            
-            if day < release_date or day > release_date + timedelta(weeks=weeks_count):
-                continue
-                
-            weeks_since_release = (day - release_date).days // 7 + 1
-            
-            if weeks_since_release <= 2:
-                movies_by_window["0-2"].append(movie)
-            elif weeks_since_release <= 4:
-                movies_by_window["3-4"].append(movie)
-            else:
-                movies_by_window["5+"].append(movie)
-
-        # Schedule minimum required showings for each movie
-        for window, movies in movies_by_window.items():
-            if not movies:
-                continue
-
-            # Sort movies by release date (newest first)
-            movies.sort(key=lambda x: datetime.strptime(str(x["release_date"]), "%Y-%m-%d").date(), reverse=True)
-            
-            for movie in movies:
-                title = movie["title"]
-                runtime = movie["runtime"]
-                
-                if title not in schedule[day_str]:
-                    schedule[day_str][title] = []
-
-                all_showtimes = get_showtimes(runtime, open_time, close_time)
-                random.shuffle(all_showtimes)
-
-                # Set minimum required showings based on release window
-                min_showings = 1  # For 5+ weeks
-                if window == "0-2":
-                    min_showings = 3
-                elif window == "3-4":
-                    min_showings = 2
-
-                # Schedule minimum required showings
-                showings_scheduled = 0
-                for showtime in all_showtimes:
-                    if showings_scheduled >= min_showings:
-                        break
-
-                    for auditorium in config["auditoriums"]:
-                        room = auditorium["room"]
-                        if is_timeslot_available(showtime, runtime, auditorium_schedules[day_str][room]):
-                            auditorium_schedules[day_str][room].append(showtime)
-                            schedule[day_str][title].append({
-                                "auditorium": room,
-                                "showtime": showtime.strftime("%H:%M")
-                            })
-                            showings_scheduled += 1
-                            break
-
-                # If we couldn't schedule minimum required showings, return None
-                if showings_scheduled < min_showings:
-                    print(f"Could not schedule minimum required showings for {title} on {day_str}")
-                    return None
-
-        # After meeting minimum requirements, fill remaining slots with priority order:
-        # 1. Get week 3-4 movies to 3 showings if possible
-        # 2. Then prioritize week 0-2 movies for remaining slots
+        # Filter for active and non-expired movies
+        active_movies = [
+            movie for movie in config["movies"]
+            if (datetime.strptime(str(movie["release_date"]), "%Y-%m-%d").date() <= day <= 
+                datetime.strptime(str(movie["release_date"]), "%Y-%m-%d").date() + timedelta(weeks=movie["weeks"]))
+            and not is_movie_expired(movie["title"], config)
+        ]
         
-        # First, try to get week 3-4 movies to 3 showings
-        if movies_by_window["3-4"]:
-            for movie in movies_by_window["3-4"]:
-                title = movie["title"]
-                runtime = movie["runtime"]
-                current_showings = len(schedule[day_str][title])
-                
-                if current_showings < 3:  # Try to get to 3 showings
-                    remaining_showtimes = get_showtimes(runtime, open_time, close_time)
-                    random.shuffle(remaining_showtimes)
-
-                    for showtime in remaining_showtimes:
-                        if len(schedule[day_str][title]) >= 3:
-                            break
-                            
+        # Sort by release date (newest first) and assign priorities
+        active_movies.sort(key=lambda x: x["release_date"], reverse=True)
+        
+        # Group movies by release date to assign same priority
+        priority_groups = {}
+        current_priority = 1
+        current_release_date = None
+        
+        for movie in active_movies:
+            if movie["release_date"] != current_release_date:
+                current_release_date = movie["release_date"]
+                current_priority += 1
+            priority_groups.setdefault(current_priority, []).append(movie)
+        
+        # Initialize auditorium schedules
+        auditorium_schedules = {aud["room"]: [] for aud in config["auditoriums"]}
+        
+        # Schedule movies by priority until no more slots available
+        while priority_groups:
+            for priority in sorted(priority_groups.keys()):
+                for movie in priority_groups[priority]:
+                    title = movie["title"]
+                    runtime = movie["runtime"]
+                    
+                    if title not in schedule[day_str]:
+                        schedule[day_str][title] = []
+                    
+                    # Get possible showtimes
+                    available_times = get_showtimes(runtime, open_time, close_time)
+                    random.shuffle(available_times)
+                    
+                    # Try to schedule in any auditorium
+                    scheduled = False
+                    for showtime in available_times:
                         for auditorium in config["auditoriums"]:
                             room = auditorium["room"]
-                            if is_timeslot_available(showtime, runtime, auditorium_schedules[day_str][room]):
-                                auditorium_schedules[day_str][room].append(showtime)
+                            if is_timeslot_available(showtime, runtime, auditorium_schedules[room]):
+                                auditorium_schedules[room].append(showtime)
                                 schedule[day_str][title].append({
                                     "auditorium": room,
                                     "showtime": showtime.strftime("%H:%M")
                                 })
+                                scheduled = True
                                 break
-
-        # Then fill remaining slots with week 0-2 releases
-        if movies_by_window["0-2"]:
-            for movie in movies_by_window["0-2"]:
-                title = movie["title"]
-                runtime = movie["runtime"]
-                
-                remaining_showtimes = get_showtimes(runtime, open_time, close_time)
-                random.shuffle(remaining_showtimes)
-
-                for showtime in remaining_showtimes:
-                    for auditorium in config["auditoriums"]:
-                        room = auditorium["room"]
-                        if is_timeslot_available(showtime, runtime, auditorium_schedules[day_str][room]):
-                            auditorium_schedules[day_str][room].append(showtime)
-                            schedule[day_str][title].append({
-                                "auditorium": room,
-                                "showtime": showtime.strftime("%H:%M")
-                            })
+                        if scheduled:
                             break
-
+                    
+                    if not scheduled:  # No more slots available for this movie
+                        priority_groups[priority].remove(movie)
+                        if not priority_groups[priority]:
+                            del priority_groups[priority]
+                
+            # Remove lowest priority after each round
+            if priority_groups:
+                max_priority = max(priority_groups.keys())
+                del priority_groups[max_priority]
+    
     return schedule
 
 if __name__ == "__main__":
