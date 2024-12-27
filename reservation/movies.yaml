@@ -17,10 +17,13 @@ hours:
 
 auditoriums: 
   - room: 1
+    size_rank: 3
     seats: 160
   - room: 2
+    size_rank: 1
     seats: 200
   - room: 3
+    size_rank: 2
     seats: 182
 
 movies:
@@ -33,7 +36,7 @@ movies:
     runtime: 195
     rating: "PG-13"
     release_date: 2024-11-22
-    weeks: 5
+    weeks: 6
   - title: "Avengers: Endgame"
     runtime: 181
     rating: "PG-13"

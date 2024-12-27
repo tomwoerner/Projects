@@ -1,7 +1,7 @@
-import yaml
-from datetime import datetime, timedelta
-import random
 import math
+from datetime import datetime, timedelta
+import yaml
+from itertools import cycle
 
 def load_config(config_file):
     with open(config_file, "r") as file:
@@ -10,158 +10,161 @@ def load_config(config_file):
 def round_to_next_5min(dt):
     minutes = dt.minute
     rounded_minutes = math.ceil(minutes / 5) * 5
-    
     if rounded_minutes == 60:
         return dt.replace(minute=0) + timedelta(hours=1)
     return dt.replace(minute=rounded_minutes)
 
-def get_showtimes(runtime, open_time, close_time):
-    showtimes = []
-    # Add 5 minutes padding before showtime and round to next 5 min interval
-    current_time = round_to_next_5min(open_time + timedelta(minutes=5))
+def is_weekend(day):
+    return day.weekday() >= 5
+
+def filter_active_movies(movies, start_date):
+    active_movies = []
+    for movie in movies:
+        release_date = movie['release_date']
+        # Handle both string and date object inputs
+        if isinstance(release_date, str):
+            release_date = datetime.strptime(release_date, '%Y-%m-%d').date()
+        end_date = release_date + timedelta(weeks=movie['weeks'])
+        if release_date <= start_date and end_date > start_date:
+            movie_copy = movie.copy()
+            movie_copy['release_date'] = release_date
+            active_movies.append(movie_copy)
+    return active_movies
+
+def assign_auditoriums(movies, auditoriums):
+    # Sort movies by release date (newest first) and runtime (longer first) for tiebreaker
+    movies.sort(key=lambda x: (x["release_date"], x["runtime"]), reverse=True)
+    # Sort auditoriums by size rank (largest first)
+    auditoriums.sort(key=lambda x: x["size_rank"])
+
+    assignments = {movie["title"]: [] for movie in movies}
     
-    while current_time + timedelta(minutes=runtime) <= close_time:
-        showtimes.append(current_time)
-        # Move to next potential showtime and round up
-        next_time = round_to_next_5min(current_time + timedelta(minutes=runtime))
-        if next_time <= current_time:  # Prevent infinite loop
-            current_time = next_time + timedelta(minutes=5)
-        else:
-            current_time = next_time
-    return showtimes
+    # Assign dedicated auditoriums to all but the last two movies
+    for i, movie in enumerate(movies[:-2]):
+        assignments[movie["title"]].append(auditoriums[i]["room"])
+    
+    # Last two movies share the smallest auditorium
+    if len(movies) >= 2:
+        for movie in movies[-2:]:
+            assignments[movie["title"]].append(auditoriums[-1]["room"])
+    
+    return assignments, movies[-2:] if len(movies) >= 2 else []
 
-def is_timeslot_available(showtime, runtime, auditorium_schedule):
-    for scheduled_time in auditorium_schedule:
-        movie_end_time = showtime + timedelta(minutes=runtime)
-        scheduled_end_time = scheduled_time + timedelta(minutes=runtime)
-        if not (movie_end_time <= scheduled_time or showtime >= scheduled_end_time):
-            return False
-    return True
+def generate_schedule(config, days=1, start_date=None):
+    if not start_date:
+        start_date = datetime.today().date()
+    if not isinstance(days, int) or days < 1:
+        days = 1
 
-def get_days_until_expiration(movie_title, movies_config):
-    """
-    Calculate days until movie expiration.
-    Returns negative number if expired.
-    """
-    movie = next((m for m in movies_config["movies"] if m["title"] == movie_title), None)
-    if not movie:
-        raise ValueError(f"Movie {movie_title} not found")
-        
-    release_date = movie["release_date"] if isinstance(movie["release_date"], datetime) else datetime.strptime(str(movie["release_date"]), "%Y-%m-%d")
-    expiration_date = release_date + timedelta(days=movie["weeks"] * 7)
-    days_remaining = (expiration_date - datetime.now()).days
-    return days_remaining
-
-def is_movie_expired(movie_title, movies_config):
-    """Check if movie has expired based on release date and weeks running"""
-    return get_days_until_expiration(movie_title, movies_config) < 0
-
-def filter_active_movies(movies_config):
-    """Return only non-expired movies"""
-    return [m for m in movies_config["movies"] 
-            if not is_movie_expired(m["title"], movies_config)]
-
-def generate_schedule(config, days):
-    today = datetime.today().date()
     schedule = {}
+    pricing = config["pricing"]
+    hours = config["hours"]
+    auditoriums = config["auditoriums"]
+    movies = filter_active_movies(config["movies"], start_date)
+
+    # Get auditorium assignments and shared movies
+    auditorium_assignments, shared_movies = assign_auditoriums(movies, auditoriums)
     
-    for i in range(days):
-        day = today + timedelta(days=i)
-        day_str = day.strftime("%Y-%m-%d")
-        schedule[day_str] = {}
+    for day_offset in range(days):
+        current_date = start_date + timedelta(days=day_offset)
+        day_key = current_date.strftime("%Y-%m-%d")
+        schedule[day_key] = []
+
+        # Get operating hours
+        is_weekend_day = is_weekend(current_date)
+        open_time_str = next(h["open"] for h in hours if h["day"] == ("Weekend" if is_weekend_day else "Weekday"))
+        close_time_str = next(h["close"] for h in hours if h["day"] == ("Weekend" if is_weekend_day else "Weekday"))
         
-        day_name = day.strftime("%A")
-        hours = next(h for h in config["hours"] if h["day"] == ("Weekday" if day_name in ["Monday", "Tuesday", "Wednesday", "Thursday"] else "Weekend"))
+        # Add 5 minutes to opening time before first showing
+        open_time = datetime.strptime(f"{day_key} {open_time_str}", "%Y-%m-%d %H:%M") + timedelta(minutes=5)
+        close_time = datetime.strptime(f"{day_key} {close_time_str}", "%Y-%m-%d %H:%M")
         
-        open_time = datetime.strptime(hours["open"], "%H:%M").replace(year=day.year, month=day.month, day=day.day)
-        close_time = datetime.strptime(hours["close"], "%H:%M").replace(year=day.year, month=day.month, day=day.day)
-        
-        # Filter for active and non-expired movies
-        active_movies = [
-            movie for movie in config["movies"]
-            if (datetime.strptime(str(movie["release_date"]), "%Y-%m-%d").date() <= day <= 
-                datetime.strptime(str(movie["release_date"]), "%Y-%m-%d").date() + timedelta(weeks=movie["weeks"]))
-            and not is_movie_expired(movie["title"], config)
-        ]
-        
-        # Sort by release date (newest first) and assign priorities
-        active_movies.sort(key=lambda x: x["release_date"], reverse=True)
-        
-        # Group movies by release date to assign same priority
-        priority_groups = {}
-        current_priority = 1
-        current_release_date = None
-        
-        for movie in active_movies:
-            if movie["release_date"] != current_release_date:
-                current_release_date = movie["release_date"]
-                current_priority += 1
-            priority_groups.setdefault(current_priority, []).append(movie)
-        
-        # Initialize auditorium schedules
-        auditorium_schedules = {aud["room"]: [] for aud in config["auditoriums"]}
-        
-        # Schedule movies by priority until no more slots available
-        while priority_groups:
-            for priority in sorted(priority_groups.keys()):
-                for movie in priority_groups[priority]:
-                    title = movie["title"]
-                    runtime = movie["runtime"]
-                    
-                    if title not in schedule[day_str]:
-                        schedule[day_str][title] = []
-                    
-                    # Get possible showtimes
-                    available_times = get_showtimes(runtime, open_time, close_time)
-                    random.shuffle(available_times)
-                    
-                    # Try to schedule in any auditorium
-                    scheduled = False
-                    for showtime in available_times:
-                        for auditorium in config["auditoriums"]:
-                            room = auditorium["room"]
-                            if is_timeslot_available(showtime, runtime, auditorium_schedules[room]):
-                                auditorium_schedules[room].append(showtime)
-                                schedule[day_str][title].append({
-                                    "auditorium": room,
-                                    "showtime": showtime.strftime("%H:%M")
-                                })
-                                scheduled = True
-                                break
-                        if scheduled:
-                            break
-                    
-                    if not scheduled:  # No more slots available for this movie
-                        priority_groups[priority].remove(movie)
-                        if not priority_groups[priority]:
-                            del priority_groups[priority]
+        # Initialize all auditoriums to start at the rounded opening time
+        first_showing = round_to_next_5min(open_time)
+        auditorium_end_times = {aud["room"]: first_showing for aud in auditoriums}
+        shared_auditorium = auditoriums[-1]["room"]
+        current_shared_movie_index = 0
+
+        # Keep scheduling until we can't fit any more movies
+        while True:
+            scheduled_any = False
+            
+            for movie in movies:
+                title = movie["title"]
+                runtime = timedelta(minutes=movie["runtime"])
                 
-            # Remove lowest priority after each round
-            if priority_groups:
-                max_priority = max(priority_groups.keys())
-                del priority_groups[max_priority]
-    
+                # For movies sharing an auditorium
+                if movie in shared_movies:
+                    # Skip if it's not this movie's turn
+                    if movie != shared_movies[current_shared_movie_index]:
+                        continue
+                    
+                    # Find next available start time in shared auditorium
+                    next_start = round_to_next_5min(auditorium_end_times[shared_auditorium])
+                    
+                    # Check if we can schedule another showing (allowing it to start up to 5 min before close)
+                    if next_start <= close_time - timedelta(minutes=5):
+                        pricing_type = "matinee" if next_start.time() < datetime.strptime("18:00", "%H:%M").time() else "adult"
+                        schedule[day_key].append({
+                            "movie": title,
+                            "auditorium": shared_auditorium,
+                            "start_time": next_start.strftime("%H:%M"),
+                            "pricing": pricing[pricing_type]
+                        })
+                        auditorium_end_times[shared_auditorium] = next_start + runtime + timedelta(minutes=5)
+                        scheduled_any = True
+                        
+                        # Switch to the other shared movie
+                        current_shared_movie_index = (current_shared_movie_index + 1) % len(shared_movies)
+                
+                # For movies with dedicated auditoriums
+                else:
+                    for auditorium in auditorium_assignments[title]:
+                        next_start = round_to_next_5min(auditorium_end_times[auditorium])
+                        
+                        # Check if we can schedule another showing (allowing it to start up to 5 min before close)
+                        if next_start <= close_time - timedelta(minutes=5):
+                            pricing_type = "matinee" if next_start.time() < datetime.strptime("18:00", "%H:%M").time() else "adult"
+                            schedule[day_key].append({
+                                "movie": title,
+                                "auditorium": auditorium,
+                                "start_time": next_start.strftime("%H:%M"),
+                                "pricing": pricing[pricing_type]
+                            })
+                            auditorium_end_times[auditorium] = next_start + runtime + timedelta(minutes=5)
+                            scheduled_any = True
+            
+            # If we couldn't schedule any more movies, we're done for the day
+            if not scheduled_any:
+                break
+
     return schedule
 
-if __name__ == "__main__":
-    config = load_config("movies.yaml")
-    while True:
-        try:
-            days = int(input("Enter the number of days to generate the schedule for: "))
-            break
-        except ValueError:
-            print("Invalid input. Please enter an integer value.")
-
-    schedule = None
-    while schedule is None:
-        schedule = generate_schedule(config, days)
-
-    # Print schedule organized by date, then movies
-    for date, movies in schedule.items():
-        print(f"\nDate: {date}")
-        for movie, showings in movies.items():
+def print_schedule(schedule):
+    for date, shows in sorted(schedule.items()):
+        print(f"Date: {date}")
+        movies_schedule = {}
+        
+        # Group showtimes by movie
+        for show in sorted(shows, key=lambda x: (x['movie'], x['start_time'])):
+            movie = show['movie']
+            if movie not in movies_schedule:
+                movies_schedule[movie] = []
+            movies_schedule[movie].append((show['auditorium'], show['start_time']))
+        
+        # Print grouped schedule
+        for movie in sorted(movies_schedule.keys()):
             print(f"  Movie: {movie}")
-            # Sort showings by time
-            sorted_showings = sorted(showings, key=lambda x: x['showtime'])
-            for showing in sorted_showings:
-                print(f"    Auditorium: {showing['auditorium']}, Showtime: {showing['showtime']}")
+            for auditorium, start_time in sorted(movies_schedule[movie], key=lambda x: x[1]):
+                print(f"    Auditorium: {auditorium}, Showtime: {start_time}")
+
+# Load configuration and generate schedule
+config = load_config("movies.yaml")
+schedule = generate_schedule(config, days=3, start_date=datetime(2024, 12, 25).date())
+
+# Print the schedule in the desired format
+print_schedule(schedule)
+
+# Print the schedule
+#import pprint
+#pprint.pprint(schedule)
