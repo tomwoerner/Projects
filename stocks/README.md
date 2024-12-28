@@ -67,8 +67,13 @@ Stock-ticker symbol
         1. Customer reviews and satisfaction (e.g. NPS scores)
         2. Public perception of the brand
 Sources: Press releases, industry news, earnings calls, research reports (Morningstar)
-  
-
+4. Forecasts = what it may be worth in the future
+    1. Analyst Ratings
+       1. Consensus Rating
+       2. Price Target
+    2. Next Quarter Predictions
+       1. EPS Estimate (YoY, QoQ %)
+       2. Revenue Estimate (YoY, QoQ %)
 
 # Outputs
 FMV estimate using different methods or with explanation of context. Top 3 headlines, long-term trends, mid-term changes, and short-term activity.
