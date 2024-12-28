@@ -3,8 +3,7 @@ To calculate an estimate of fair-market value of an equity
 # Inputs
 Stock-ticker symbol
 # Report
-1. Quantitative analysis
-  1. Fundamentals analysis = what the company is worth
+1. Fundamentals analysis = what the company is worth
     1. Profitability
        1. EPS = net income/outstanding shares
        2. Net Profit Margin = net income as % of revenue
@@ -29,7 +28,7 @@ Stock-ticker symbol
        2. Asset turnover = total sales/avg assets (time period)
        3. Return on capital
    Sources: Company financial statements, analyst reports, SEC filings
-  2. Technical analysis = when to buy or sell
+2. Technical analysis = when to buy or sell
     1. Price Trends
        1. MA Moving Averages = 50-day, 200-day etc.
        2. Trendlines = identify upward, downward, or sideways trends
