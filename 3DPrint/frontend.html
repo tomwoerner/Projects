@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Foreground Detector</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .upload-container {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            text-align: center;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .canvas-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+        }
+        .canvas-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        canvas {
+            border: 1px solid #ddd;
+            max-width: 100%;
+        }
+        .tools {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        input[type="range"] {
+            width: 100px;
+        }
+        .tool-option {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            font-style: italic;
+        }
+        .editor-view {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Image Foreground Detector & Mask Editor</h1>
+        
+        <div id="upload-view">
+            <div class="upload-container" id="dropzone">
+                <h2>Upload an Image</h2>
+                <p>Drag and drop an image here or click to browse</p>
+                <input type="file" id="file-input" accept="image/*" style="display: none;">
+                <button id="browse-button">Browse Files</button>
+            </div>
+        </div>
+        
+        <div id="loading" class="loading">
+            <h2>Processing image...</h2>
+            <p>Please wait while we detect the foreground</p>
+        </div>
+        
+        <div id="editor-view" class="editor-view">
+            <div class="tools">
+                <button id="add-btn" class="tool-btn">Add to Mask</button>
+                <button id="remove-btn" class="tool-btn">Remove from Mask</button>
+                <div class="tool-option">
+                    <label for="brush-size">Brush Size:</label>
+                    <input type="range" id="brush-size" min="1" max="50" value="20">
+                    <span id="brush-size-value">20px</span>
+                </div>
+                <button id="save-btn">Save Mask</button>
+                <button id="download-btn">Download Masked Image</button>
+                <button id="reset-btn">Reset to Auto Mask</button>
+            </div>
+            
+            <div class="canvas-container">
+                <div class="canvas-wrapper">
+                    <h3>Original Image</h3>
+                    <canvas id="original-canvas"></canvas>
+                </div>
+                <div class="canvas-wrapper">
+                    <h3>Mask Editor</h3>
+                    <canvas id="mask-editor-canvas"></canvas>
+                </div>
+                <div class="canvas-wrapper">
+                    <h3>Result Preview</h3>
+                    <canvas id="result-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let sessionId = null;
+        let originalImage = new Image();
+        let maskImage = new Image();
+        let isDrawing = false;
+        let brushSize = 20;
+        let drawMode = 'add'; // 'add' or 'remove'
+        
+        // Canvas elements
+        const originalCanvas = document.getElementById('original-canvas');
+        const originalCtx = originalCanvas.getContext('2d');
+        const maskEditorCanvas = document.getElementById('mask-editor-canvas');
+        const maskEditorCtx = maskEditorCanvas.getContext('2d');
+        const resultCanvas = document.getElementById('result-canvas');
+        const resultCtx = resultCanvas.getContext('2d');
+        
+        // DOM elements
+        const uploadView = document.getElementById('upload-view');
+        const editorView = document.getElementById('editor-view');
+        const loadingView = document.getElementById('loading');
+        const fileInput = document.getElementById('file-input');
+        const dropzone = document.getElementById('dropzone');
+        const browseButton = document.getElementById('browse-button');
+        const addBtn = document.getElementById('add-btn');
+        const removeBtn = document.getElementById('remove-btn');
+        const brushSizeInput = document.getElementById('brush-size');
+        const brushSizeValue = document.getElementById('brush-size-value');
+        const saveBtn = document.getElementById('save-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        
+        // Event Listeners
+        browseButton.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFileSelect);
+        
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.style.borderColor = '#4CAF50';
+        });
+        
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.style.borderColor = '#ccc';
+        });
+        
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.style.borderColor = '#ccc';
+            if (e.dataTransfer.files.length) {
+                handleFileUpload(e.dataTransfer.files[0]);
+            }
+        });
+        
+        // Tool buttons
+        addBtn.addEventListener('click', () => {
+            drawMode = 'add';
+            addBtn.style.backgroundColor = '#45a049';
+            removeBtn.style.backgroundColor = '#4CAF50';
+        });
+        
+        removeBtn.addEventListener('click', () => {
+            drawMode = 'remove';
+            removeBtn.style.backgroundColor = '#45a049';
+            addBtn.style.backgroundColor = '#4CAF50';
+        });
+        
+        brushSizeInput.addEventListener('input', () => {
+            brushSize = parseInt(brushSizeInput.value);
+            brushSizeValue.textContent = `${brushSize}px`;
+        });
+        
+        // Drawing events
+        maskEditorCanvas.addEventListener('mousedown', startDrawing);
+        maskEditorCanvas.addEventListener('mousemove', draw);
+        maskEditorCanvas.addEventListener('mouseup', stopDrawing);
+        maskEditorCanvas.addEventListener('mouseout', stopDrawing);
+        
+        // Touch support for mobile
+        maskEditorCanvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const mouseEvent = new MouseEvent('mousedown', {
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            });
+            maskEditorCanvas.dispatchEvent(mouseEvent);
+        });
+        
+        maskEditorCanvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const mouseEvent = new MouseEvent('mousemove', {
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            });
+            maskEditorCanvas.dispatchEvent(mouseEvent);
+        });
+        
+        maskEditorCanvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            const mouseEvent = new MouseEvent('mouseup');
+            maskEditorCanvas.dispatchEvent(mouseEvent);
+        });
+        
+        // Save button
+        saveBtn.addEventListener('click', saveMask);
+        
+        // Download button
+        downloadBtn.addEventListener('click', downloadMaskedImage);
+        
+        // Reset button
+        resetBtn.addEventListener('click', resetToAutoMask);
+        
+        // Functions
+        function handleFileSelect(e) {
+            if (e.target.files.length) {
+                handleFileUpload(e.target.files[0]);
+            }
+        }
+        
+        function handleFileUpload(file) {
+            if (!file.type.match('image.*')) {
+                alert('Please select an image file');
+                return;
+            }
+            
+            // Show loading
+            uploadView.style.display = 'none';
+            loadingView.style.display = 'block';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                sessionId = data.session_id;
+                loadImages(data.original_url, data.mask_url);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error uploading image. Please try again.');
+                uploadView.style.display = 'block';
+                loadingView.style.display = 'none';
+            });
+        }
+        
+        function loadImages(originalUrl, maskUrl) {
+            // Load original image
+            originalImage.onload = () => {
+                // Set canvas dimensions based on image
+                const maxWidth = window.innerWidth * 0.3; // 30% of window width
+                const scale = Math.min(1, maxWidth / originalImage.width);
+                
+                const canvasWidth = originalImage.width * scale;
+                const canvasHeight = originalImage.height * scale;
+                
+                // Set dimensions for all canvases
+                originalCanvas.width = canvasWidth;
+                originalCanvas.height = canvasHeight;
+                maskEditorCanvas.width = canvasWidth;
+                maskEditorCanvas.height = canvasHeight;
+                resultCanvas.width = canvasWidth;
+                resultCanvas.height = canvasHeight;
+                
+                // Draw original image
+                originalCtx.drawImage(originalImage, 0, 0, canvasWidth, canvasHeight);
+                
+                // Load mask image
+                maskImage.onload = () => {
+                    // Draw mask to mask editor
+                    maskEditorCtx.drawImage(maskImage, 0, 0, canvasWidth, canvasHeight);
+                    
+                    // Update result preview
+                    updateResultPreview();
+                    
+                    // Hide loading, show editor
+                    loadingView.style.display = 'none';
+                    editorView.style.display = 'block';
+                };
+                maskImage.src = maskUrl + '?t=' + new Date().getTime(); // Prevent caching
+            };
+            originalImage.src = originalUrl + '?t=' + new Date().getTime(); // Prevent caching
+        }
+        
+        function startDrawing(e) {
+            isDrawing = true;
+            draw(e);
+        }
+        
+        function draw(e) {
+            if (!isDrawing) return;
+            
+            const rect = maskEditorCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            maskEditorCtx.beginPath();
+            maskEditorCtx.arc(x, y, brushSize, 0, Math.PI * 2);
+            maskEditorCtx.fillStyle = drawMode === 'add' ? 'white' : 'black';
+            maskEditorCtx.fill();
+            
+            // Update result preview after each draw
+            updateResultPreview();
+        }
+        
+        function stopDrawing() {
+            isDrawing = false;
+        }
+        
+        function updateResultPreview() {
+            // Draw original image to result canvas
+            resultCtx.drawImage(originalImage, 0, 0, resultCanvas.width, resultCanvas.height);
+            
+            // Get mask data
+            const maskData = maskEditorCtx.getImageData(0, 0, maskEditorCanvas.width, maskEditorCanvas.height);
+            
+            // Get result image data
+            const resultData = resultCtx.getImageData(0, 0, resultCanvas.width, resultCanvas.height);
+            
+            // Apply mask to result (make transparent where mask is black)
+            for (let i = 0; i < maskData.data.length; i += 4) {
+                // Use mask's red channel as alpha
+                resultData.data[i + 3] = maskData.data[i]; // Use R channel as alpha
+            }
+            
+            // Put modified image data back
+            resultCtx.putImageData(resultData, 0, 0);
+        }
+        
+        function saveMask() {
+            if (!sessionId) return;
+            
+            // Convert canvas to blob
+            maskEditorCanvas.toBlob(blob => {
+                const formData = new FormData();
+                formData.append('file', blob);
+                
+                fetch(`/masks/${sessionId}.png`, {
+                    method: 'PUT',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    alert('Mask saved successfully!');
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error saving mask. Please try again.');
+                });
+            });
+        }
+        
+        function downloadMaskedImage() {
+            // Create a temporary canvas for the final image
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = resultCanvas.width;
+            tempCanvas.height = resultCanvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Draw result to temp canvas
+            tempCtx.drawImage(resultCanvas, 0, 0);
+            
+            // Create download link
+            const link = document.createElement('a');
+            link.download = 'masked_image.png';
+            tempCanvas.toBlob(blob => {
+                link.href = URL.createObjectURL(blob);
+                link.click();
+                URL.revokeObjectURL(link.href);
+            });
+        }
+        
+        function resetToAutoMask() {
+            if (!sessionId) return;
+            
+            // Reload original mask from server
+            const maskUrl = `/masks/${sessionId}.png`;
+            maskImage.onload = () => {
+                // Clear current mask
+                maskEditorCtx.clearRect(0, 0, maskEditorCanvas.width, maskEditorCanvas.height);
+                // Draw original mask
+                maskEditorCtx.drawImage(maskImage, 0, 0, maskEditorCanvas.width, maskEditorCanvas.height);
+                // Update result preview
+                updateResultPreview();
+            };
+            maskImage.src = maskUrl + '?t=' + new Date().getTime(); // Prevent caching
+        }
+    </script>
+</body>
+</html>

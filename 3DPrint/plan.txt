@@ -1,0 +1,9 @@
+⚡ Starter Libraries/Scripts
+
+Function	Library
+Foreground detection	u2net, MODNet
+Image editing	HTML5 Canvas, fabric.js
+3D conversion	Blender Python API, OpenSCAD, Pillow
+Web backend	FastAPI + Python
+Preview	Three.js STL viewer
+Mask editing frontend	Custom canvas drawing or Photopea embedding (if going big)
