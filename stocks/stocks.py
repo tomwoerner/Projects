@@ -1,46 +1,9 @@
 import requests # pip install requests
-import configparser
 import sys
 import importlib
 from valuation import get_financial_ratios
+from utils import load_config
 
-def load_config(file_path, group, *parameters):
-    """
-    Load specific parameters from a given group in the config file.
-
-    Args:
-        file_path (str): Path to the configuration file.
-        group (str): The group/section name in the config file.
-        *parameters (str): Names of the parameters (keys) to load.
-
-    Returns:
-        dict: A dictionary containing the requested parameters and their values.
-    """
-    config = configparser.ConfigParser()
-    try:
-        config.read(file_path)
-        
-        # Access the specified group
-        section = config[group]
-        
-        # Load requested parameters
-        loaded_params = {}
-        for param in parameters:
-            if param in section:
-                loaded_params[param] = section[param]
-            else:
-                print(f"Warning: '{param}' not found in section '{group}'")
-
-        return loaded_params
-
-    except FileNotFoundError:
-        print(f"Error: The file '{file_path}' was not found.")
-    except KeyError as e:
-        print(f"Error: Missing section or key: {e}")
-    except Exception as e:
-        print(f"An error occurred: {e}")
-    
-    return {}
 
 def get_realtime_stock_price(api_key, api_url, ticker):
     """Fetch real-time stock price for a given symbol."""
